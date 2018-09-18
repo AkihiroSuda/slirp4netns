@@ -8,6 +8,6 @@ RUN ./autogen.sh && ./configure && make -j $(nproc)
 
 FROM build AS test
 USER 0
-RUN apt update && apt install -y git indent libtool iproute2 clang clang-tidy iputils-ping iperf3
+RUN apt update && apt install -y git indent libtool iproute2 clang clang-tidy iputils-ping iperf3 netcat-openbsd jq
 USER 1000:1000
 CMD ["make", "ci"]

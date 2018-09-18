@@ -215,7 +215,7 @@ static int recvfd(int sock)
 	return fd;
 }
 
-static int parent(int sock, int exit_fd, unsigned int mtu, bool enable_ipv6)
+static int parent(int sock, int exit_fd, unsigned int mtu, const char *api_socket, bool enable_ipv6)
 {
 	int rc, tapfd;
 	if ((tapfd = recvfd(sock)) < 0) {
@@ -223,8 +223,8 @@ static int parent(int sock, int exit_fd, unsigned int mtu, bool enable_ipv6)
 	}
 	fprintf(stderr, "received tapfd=%d\n", tapfd);
 	close(sock);
-	printf("starting slirp, MTU=%d\n", mtu);
-	if ((rc = do_slirp(tapfd, exit_fd, mtu, enable_ipv6)) < 0) {
+	printf("starting slirp, MTU=%d, API=%s\n", mtu, api_socket);
+	if ((rc = do_slirp(tapfd, exit_fd, mtu, api_socket, enable_ipv6)) < 0) {
 		fprintf(stderr, "do_slirp failed\n");
 		close(tapfd);
 		return rc;
@@ -237,11 +237,12 @@ static void usage(const char *argv0)
 {
 	printf("Usage: %s [OPTION]... PID TAPNAME\n", argv0);
 	printf("User-mode networking for unprivileged network namespaces.\n\n");
-	printf("-c, --configure      bring up the interface\n");
-	printf("-e, --exit-fd=FD     specify the FD for terminating slirp4netns\n");
-	printf("-r, --ready-fd=FD    specify the FD to write to when the network is configured\n");
-	printf("-m, --mtu=MTU        specify MTU (default=1500, max=65521)\n");
-	printf("-6, --enable-ipv6    enable IPv6 (experimental)\n");
+	printf("-c, --configure          bring up the interface\n");
+	printf("-e, --exit-fd=FD         specify the FD for terminating slirp4netns\n");
+	printf("-r, --ready-fd=FD        specify the FD to write to when the network is configured\n");
+	printf("-m, --mtu=MTU            specify MTU (default=1500, max=65521)\n");
+	printf("-a, --api-socket=PATH    specify API socket path\n");
+	printf("-6, --enable-ipv6        enable IPv6 (experimental)\n");
 }
 
 struct options {
@@ -252,6 +253,7 @@ struct options {
 	int ready_fd;		// -r
 	unsigned int mtu;	// -m
 	bool enable_ipv6;	// -6
+	char *api_socket;	// -a
 };
 
 static void options_init(struct options *options)
@@ -267,6 +269,10 @@ static void options_destroy(struct options *options)
 		free(options->tapname);
 		options->tapname = NULL;
 	}
+	if (options->api_socket != NULL) {
+		free(options->api_socket);
+		options->api_socket = NULL;
+	}
 	// options itself is not freed, because it can be on the stack.
 }
 
@@ -281,11 +287,12 @@ static void parse_args(int argc, char *const argv[], struct options *options)
 		{"exit-fd", required_argument, NULL, 'e'},
 		{"ready-fd", required_argument, NULL, 'r'},
 		{"mtu", required_argument, NULL, 'm'},
+		{"api-socket", required_argument, NULL, 'a'},
 		{"enable-ipv6", no_argument, NULL, '6'},
 		{0, 0, 0, 0},
 	};
 	options_init(options);
-	while ((opt = getopt_long(argc, argv, "ce:r:m:6", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "ce:r:m:a:6", longopts, NULL)) != -1) {
 		switch (opt) {
 		case 'c':
 			options->do_config_network = true;
@@ -316,6 +323,9 @@ static void parse_args(int argc, char *const argv[], struct options *options)
 				usage(argv[0]);
 				exit(EXIT_FAILURE);
 			}
+			break;
+		case 'a':
+			options->api_socket = strdup(optarg);
 			break;
 		case '6':
 			options->enable_ipv6 = true;
@@ -353,42 +363,49 @@ int main(int argc, char *const argv[])
 	int sv[2];
 	pid_t child_pid;
 	struct options options;
+	int exit_status = 0;
 
 	parse_args(argc, argv, &options);
 	if (socketpair(AF_LOCAL, SOCK_STREAM, 0, sv) < 0) {
 		perror("socketpair");
-		exit(EXIT_FAILURE);
+		exit_status = EXIT_FAILURE;
+		goto finish;
 	}
 	if ((child_pid = fork()) < 0) {
 		perror("fork");
-		options_destroy(&options);
-		exit(EXIT_FAILURE);
+		exit_status = EXIT_FAILURE;
+		goto finish;
 	}
 	if (child_pid == 0) {
 		if (child
 		    (sv[1], options.target_pid, options.do_config_network, options.tapname, options.ready_fd,
 		     options.mtu, options.enable_ipv6) < 0) {
-			options_destroy(&options);
-			exit(EXIT_FAILURE);
+			exit_status = EXIT_FAILURE;
+			goto finish;
 		}
 		options_destroy(&options);
 	} else {
 		int child_wstatus, child_status;
-		options_destroy(&options);
 		waitpid(child_pid, &child_wstatus, 0);
 		if (!WIFEXITED(child_wstatus)) {
 			fprintf(stderr, "child failed\n");
-			exit(EXIT_FAILURE);
+			exit_status = EXIT_FAILURE;
+			goto finish;
 		}
 		child_status = WEXITSTATUS(child_wstatus);
 		if (child_status != 0) {
 			fprintf(stderr, "child failed(%d)\n", child_status);
-			exit(child_status);
+			exit_status = child_status;
+			goto finish;
 		}
-		if (parent(sv[0], options.exit_fd, options.mtu, options.enable_ipv6) < 0) {
+		if (parent(sv[0], options.exit_fd, options.mtu, options.api_socket, options.enable_ipv6) < 0) {
 			fprintf(stderr, "parent failed\n");
-			exit(EXIT_FAILURE);
+			exit_status = EXIT_FAILURE;
+			goto finish;
 		}
 	}
+ finish:
+	options_destroy(&options);
+	exit(exit_status);
 	return 0;
 }

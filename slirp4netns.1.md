@@ -35,6 +35,9 @@ specify the FD to write to when the network is configured.
 **-m**, **--mtu=MTU**
 specify MTU (default=1500, max=65521).
 
+**-a**, **--api-socket**
+API socket path
+
 **-6**, **--enable-ipv6**
 enable IPv6 (experimental).
 
@@ -101,6 +104,47 @@ e.g.
 ```console
 $ sudo sh -c "echo 0   2147483647  > /proc/sys/net/ipv4/ping_group_range"
 ```
+
+# API SOCKET
+
+slirp4netns can provide QMP-like API server over an UNIX socket file:
+
+```console
+$ slirp4netns --api-socket /tmp/slirp4netns.sock ...
+```
+
+**add_hostfwd**: Expose a port
+
+```console
+$ json='{"execute": "add_hostfwd", "arguments": {"proto": "tcp", "host_addr": "0.0.0.0", "host_port": 8080, "guest_addr": "10.0.2.100", "guest_port": 80}}'
+$ echo -n $json | nc -U /tmp/slirp4netns.sock
+{ "return": {"id": 42}}
+```
+
+**list_hostfwd**: List exposed ports
+
+```console
+$ json='{"execute": "list_hostfwd"}'
+$ echo -n $json | nc -U /tmp/slirp4netns.sock
+{ "return": {"entries": [{"id": 42, "proto": "tcp", "host_addr": "0.0.0.0", "host_port": 8080, "guest_addr": "10.0.2.100", "guest_port": 80}]}}
+```
+
+**remove_hostfwd**: Remove an exposed port
+
+```console
+$ json='{"execute": "remove_hostfwd", "arguments": {"id": 42}}'
+$ echo -n $json | nc -U /tmp/slirp4netns.sock
+{ "return": {}}
+```
+
+Remarks:
+
+* Client needs to **shutdown** the socket with **SHUT_WR** after sending every request.
+  i.e. No support for keep-alive and timeout.
+* slirp4netns "stops the world" during processing API requests.
+* A request must be less than 4095 bytes.
+* JSON responses may contain **error** instead of **return**.
+* **add_hostfwd** is not tested with IPv6.
 
 # SEE ALSO
 
