@@ -50,6 +50,10 @@ specify the FD to write to when the network is configured.
 specify MTU (default=1500, max=65521).
 
 .PP
+\fB\-a\fP, \fB\-\-api\-socket\fP
+API socket path
+
+.PP
 \fB\-6\fP, \fB\-\-enable\-ipv6\fP
 enable IPv6 (experimental).
 
@@ -151,6 +155,66 @@ e.g.
 $ sudo sh \-c "echo 0   2147483647  > /proc/sys/net/ipv4/ping\_group\_range"
 
 .fi
+.RE
+
+
+.SH API SOCKET
+.PP
+slirp4netns can provide QMP\-like API server over an UNIX socket file:
+
+.PP
+.RS
+
+.nf
+$ slirp4netns \-\-api\-socket /tmp/slirp4netns.sock ...
+
+.fi
+.RE
+
+.PP
+\fBadd\_hostfwd\fP: Expose a port
+
+.PP
+.RS
+
+.nf
+$ json='{"execute": "add\_hostfwd", "arguments": {"proto": "tcp", "host\_addr": "0.0.0.0", "host\_port": 8080, "guest\_addr": "10.0.2.100", "guest\_port": 80}}'
+$ echo \-n $json | nc \-U /tmp/slirp4netns.sock
+{ "return": {}}
+
+.fi
+.RE
+
+.PP
+\fBremove\_hostfwd\fP: Remove an exposed port
+
+.PP
+.RS
+
+.nf
+$ json='{"execute": "remove\_hostfwd", "arguments": {"proto": "tcp", "host\_addr": "0.0.0.0", "host\_port": 8080}}'
+$ echo \-n $json | nc \-U /tmp/slirp4netns.sock
+{ "return": {}}
+
+.fi
+.RE
+
+.PP
+Remarks:
+
+.RS
+.IP \(bu 2
+Client needs to \fBshutdown\fP the socket with \fBSHUT\_WR\fP after sending every request.
+i.e. No support for keep\-alive and timeout.
+.IP \(bu 2
+slirp4netns "stops the world" during processing API requests.
+.IP \(bu 2
+A request must be less than 4095 bytes.
+.IP \(bu 2
+JSON responses may contain \fBerror\fP instead of \fBreturn\fP\&.
+.IP \(bu 2
+\fBadd\_hostfwd\fP is not tested with IPv6.
+
 .RE
 
 
