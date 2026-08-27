@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([slirp4netns], [1.3.5], [https://github.com/rootless-containers/slirp4netns/issues])
+AC_INIT([slirp4netns], [1.3.5+dev], [https://github.com/rootless-containers/slirp4netns/issues])
 AC_CONFIG_SRCDIR([main.c])
 AC_CONFIG_HEADERS([config.h])
 
